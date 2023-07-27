@@ -1,0 +1,335 @@
+"""
+Class Features
+
+Name:          cpl_manager
+Author(s):     Fabio Delogu (fabio.delogu@cimafoundation.org)
+Date:          '20180521'
+Version:       '2.0.7'
+"""
+
+######################################################################################
+# Logging
+import logging
+from copy import deepcopy
+
+from hmc.default.lib_default_args import sLoggerName, sFileBuilder, sFileRunner
+from hmc.default.lib_default_tags import ConfigTags, StaticTags, DynamicTags
+from hmc.default.lib_default_settings import FileSettings
+
+from hmc.default.lib_default_args import sFileExec as FileExec_Default
+
+from hmc.default.lib_default_datastatic import DataStatic as DataStatic_Default
+from hmc.default.lib_default_datadynamic import DataDynamic as DataDynamic_Default
+from hmc.default.lib_default_namelist import DataNamelist as DataNamelist_Default
+from hmc.default.lib_default_namelist import FileNamelist as FileNamelist_Default
+from hmc.default.lib_default_time import DataTime
+
+from hmc.driver.builder.drv_builder_info import HMC_Builder_Info
+from hmc.driver.builder.drv_builder_namelist import HMC_Builder_Namelist
+from hmc.driver.builder.drv_builder_datastatic import HMC_Builder_DataStatic
+
+from hmc.driver.builder.drv_builder_datadynamic_restart import HMC_Builder_DataDynamic_Restart
+from hmc.driver.builder.drv_builder_datadynamic_forcing_gridded import HMC_Builder_DataDynamic_Forcing_Gridded
+from hmc.driver.builder.drv_builder_datadynamic_forcing_point import HMC_Builder_DataDynamic_Forcing_Point
+from hmc.driver.builder.drv_builder_datadynamic_forcing_timeseries import HMC_Builder_DataDynamic_Forcing_TimeSeries
+from hmc.driver.builder.drv_builder_datadynamic_updating_gridded import HMC_Builder_DataDynamic_Updating_Gridded
+from hmc.driver.builder.drv_builder_datadynamic_time import HMC_Builder_DataDynamic_Time
+
+from hmc.driver.runner.drv_runner_info import HMC_Runner_Info
+from hmc.driver.runner.drv_runner_exec import HMC_Runner_Exec
+
+from hmc.driver.finalizer.drv_finalizer_data import HMC_Finalizer_Data
+from hmc.driver.finalizer.drv_finalizer_timeseries import HMC_Finalizer_TimeSeries
+
+# Logging
+oLogStream = logging.getLogger(sLoggerName)
+
+# Debug
+from hmc.debug.lib_debug import saveWorkspace, restoreWorkspace, savePickle, restorePickle
+# import matplotlib.pylab as plt
+#######################################################################################
+
+# -------------------------------------------------------------------------------------
+# Class run manager coupler
+class cpl_manager:
+
+    # -------------------------------------------------------------------------------------
+    # Classes variable(s)
+    oDataSettings = {}
+    oDataTags = {}
+    oDataVarStatic = {}
+    oDataVarDynamic = {}
+    oDataNamelist = {}
+    oDataTime = {}
+    sFileNamelist = None
+
+    sFileNameExec = None
+    sPathNameExec = None
+    # -------------------------------------------------------------------------------------
+
+    # -------------------------------------------------------------------------------------
+    # Method ClassInit
+    def __init__(self, DataSettings=FileSettings,
+                 DataTags=ConfigTags,
+                 DataVarStatic=DataStatic_Default,
+                 DataVarDyn=DataDynamic_Default,
+                 DataNamelist=DataNamelist_Default,
+                 DataTime=DataTime,
+                 FileNamelist=FileNamelist_Default,
+                 FileNameExec=FileExec_Default):
+        # -------------------------------------------------------------------------------------
+
+        # -------------------------------------------------------------------------------------
+        # Get information
+        self.oDataSettings = DataSettings
+        self.oDataTags = DataTags
+        self.oDataVarStatic = DataVarStatic
+        self.oDataVarDynamic = DataVarDyn
+        self.oDataNamelist = DataNamelist
+        self.oDataTime = DataTime
+
+        self.sFileNamelist = FileNamelist
+        self.sFileNameExec = FileNameExec
+        self.sPathNameExec = ''
+
+        # Store to execute ensemble mode
+        self.oDataSettings_VAR = DataSettings
+        self.oDataTags_VAR = DataTags
+        # -------------------------------------------------------------------------------------
+
+    # -------------------------------------------------------------------------------------
+
+    # -------------------------------------------------------------------------------------
+    # Method to builder instance
+    def Builder(self, sRunMode, oRunArgs):
+
+        # -------------------------------------------------------------------------------------
+        # Info start
+        oLogStream.info(' --> BuilderInstance [RunType: ' + sRunMode + '] ... ')
+        # -------------------------------------------------------------------------------------
+
+        # -------------------------------------------------------------------------------------
+        # Initialize builder for settings
+        oDrv_Builder_Info = HMC_Builder_Info(DataSettings=deepcopy(self.oDataSettings_VAR),
+                                             DataTags=deepcopy(self.oDataTags_VAR),
+                                             DataVarStatic=self.oDataVarStatic,
+                                             DataVarDynamic=self.oDataVarDynamic,
+                                             DataTime=self.oDataTime)
+        # Method to update settings
+        [self.oDataSettings, self.oDataTags,
+         self.oDataVarStatic, self.oDataVarDynamic] = oDrv_Builder_Info.updateInfo(sRunMode, oRunArgs)
+        # -------------------------------------------------------------------------------------
+
+        # -------------------------------------------------------------------------------------
+        # Initialize builder for data static
+        oDrv_Builder_DataStatic = HMC_Builder_DataStatic(
+            DataSettings=self.oDataSettings,
+            DataTags=self.oDataTags,
+            DataVarStatic=self.oDataVarStatic)
+
+        # Method to get and set static file(s)
+        self.oDataVarStatic = oDrv_Builder_DataStatic.getFile()
+        # -------------------------------------------------------------------------------------
+
+        # -------------------------------------------------------------------------------------
+        # Initialize builder for data dynamic restart gridded/point
+        oDrv_Builder_DataDynamic_Restart = HMC_Builder_DataDynamic_Restart(
+            DataSettings=self.oDataSettings,
+            DataTags=self.oDataTags,
+            DataVarStatic=self.oDataVarStatic,
+            DataVarDynamic=self.oDataVarDynamic,
+            DataTime=self.oDataTime)
+        # Method to get data dynamic restart gridded/point file(s)
+        self.oDataTime = oDrv_Builder_DataDynamic_Restart.getFile(sRunMode, oRunArgs)
+
+        # Initialize builder for data dynamic forcing point
+        oDrv_Builder_DataDynamic_Forcing_Point = HMC_Builder_DataDynamic_Forcing_Point(
+            DataSettings=self.oDataSettings,
+            DataTags=self.oDataTags,
+            DataVarStatic=self.oDataVarStatic,
+            DataVarDynamic=self.oDataVarDynamic,
+            DataTime=self.oDataTime)
+
+        # Method to get data dynamic forcing point file(s)
+        self.oDataTime = oDrv_Builder_DataDynamic_Forcing_Point.getFile(sRunMode, oRunArgs)
+
+        # Initialize builder for data dynamic forcing timeseries
+        oDrv_Builder_DataDynamic_Forcing_TimeSeries = HMC_Builder_DataDynamic_Forcing_TimeSeries(
+            DataSettings=self.oDataSettings,
+            DataTags=self.oDataTags,
+            DataVarStatic=self.oDataVarStatic,
+            DataVarDynamic=self.oDataVarDynamic,
+            DataTime=self.oDataTime)
+
+        # Method to get data dynamic forcing timeseries file(s)
+        self.oDataTime = oDrv_Builder_DataDynamic_Forcing_TimeSeries.getFile(sRunMode, oRunArgs)
+
+        # Initialize builder for data dynamic forcing gridded
+        oDrv_Builder_DataDynamic_Forcing_Gridded = HMC_Builder_DataDynamic_Forcing_Gridded(
+            DataSettings=self.oDataSettings,
+            DataTags=self.oDataTags,
+            DataVarStatic=self.oDataVarStatic,
+            DataVarDynamic=self.oDataVarDynamic,
+            DataTime=self.oDataTime)
+
+        # Method to get data dynamic forcing gridded file(s)
+        self.oDataTime = oDrv_Builder_DataDynamic_Forcing_Gridded.getFile(sRunMode, oRunArgs)
+        # -------------------------------------------------------------------------------------
+
+        # -------------------------------------------------------------------------------------
+        # Initialize builder for data dynamic updating gridded
+        oDrv_Builder_DataDynamic_Updating_Gridded = HMC_Builder_DataDynamic_Updating_Gridded(
+            DataSettings=self.oDataSettings,
+            DataTags=self.oDataTags,
+            DataVarStatic=self.oDataVarStatic,
+            DataVarDynamic=self.oDataVarDynamic,
+            DataTime=self.oDataTime)
+
+        # Method to get data dynamic updating gridded file(s)
+        self.oDataTime = oDrv_Builder_DataDynamic_Updating_Gridded.getFile(sRunMode, oRunArgs)
+        # -------------------------------------------------------------------------------------
+
+        # -------------------------------------------------------------------------------------
+        # Initialize builder for data dynamic time
+        oDrv_Builder_DataDynamic_Time = HMC_Builder_DataDynamic_Time(DataSettings=self.oDataSettings,
+                                                                     DataTags=self.oDataTags,
+                                                                     DataVarDynamic=self.oDataVarDynamic,
+                                                                     DataTime=self.oDataTime)
+
+        # Method to get and update time and data dynamic
+        [self.oDataTime, self.oDataVarDynamic] = oDrv_Builder_DataDynamic_Time.computeTime(sRunMode, oRunArgs)
+        # -------------------------------------------------------------------------------------
+
+        # -------------------------------------------------------------------------------------
+        # Initialize builder for namelist file
+        oDrv_Builder_Namelist = HMC_Builder_Namelist(DataSettings=self.oDataSettings,
+                                                     DataTags=self.oDataTags,
+                                                     DataVarStatic=self.oDataVarStatic,
+                                                     DataVarDynamic=self.oDataVarDynamic,
+                                                     DataTime=self.oDataTime,
+                                                     DataNamelist=self.oDataNamelist,
+                                                     FileNamelist=self.sFileNamelist)
+        # Method to write namelist file
+        [self.sFileNamelist, self.oDataNamelist] = oDrv_Builder_Namelist.writeNML(sRunMode, oRunArgs)
+        # -------------------------------------------------------------------------------------
+
+        # -------------------------------------------------------------------------------------
+        # Info end
+        oLogStream.info(' --> BuilderInstance [RunType: ' + sRunMode + '] ... OK')
+        # -------------------------------------------------------------------------------------
+
+        # -------------------------------------------------------------------------------------
+        # Debug (save builder workspace)
+        saveWorkspace(sFileBuilder,
+                      oDataSettings=self.oDataSettings,
+                      oDataTags=self.oDataTags, oDataTime=self.oDataTime,
+                      oDataNamelist=self.oDataNamelist, sFileNamelist=self.sFileNamelist,
+                      oDataVarStatic=self.oDataVarStatic, oDataVarDynamic=self.oDataVarDynamic)
+        # -------------------------------------------------------------------------------------
+
+    # -------------------------------------------------------------------------------------
+
+    # -------------------------------------------------------------------------------------
+    # Method to runner instance
+    def Runner(self, sRunMode, oRunArgs):
+
+        # -------------------------------------------------------------------------------------
+        # Debug (restore builder workspace)
+        self.__dict__.update(restoreWorkspace(sFileBuilder))
+        # -------------------------------------------------------------------------------------
+
+        # -------------------------------------------------------------------------------------
+        # Info start
+        oLogStream.info(' --> RunnerInstance [RunType: ' + sRunMode + '] ... ')
+        # -------------------------------------------------------------------------------------
+
+        # -------------------------------------------------------------------------------------
+        # Initialize runner for info Data
+        oDrv_Runner_Info = HMC_Runner_Info(DataSettings=self.oDataSettings,
+                                           DataTags=self.oDataTags,
+                                           DataVarStatic=self.oDataVarStatic,
+                                           DataVarDynamic=self.oDataVarDynamic,
+                                           DataTime=self.oDataTime,
+                                           DataNamelist=self.oDataNamelist,
+                                           FileNamelist=self.sFileNamelist,
+                                           FileNameExec=self.sFileNameExec)
+        # Method to collect information
+        self.sFileNameExec, self.sPathNameExec = oDrv_Runner_Info.collectInfo(sRunMode, oRunArgs)
+        # -------------------------------------------------------------------------------------
+
+        # -------------------------------------------------------------------------------------
+        # Initialize runner for info Data
+        oDrv_Runner_Exec = HMC_Runner_Exec(DataSettings=self.oDataSettings,
+                                           DataTags=self.oDataTags,
+                                           DataVarStatic=self.oDataVarStatic,
+                                           DataVarDynamic=self.oDataVarDynamic,
+                                           DataTime=self.oDataTime,
+                                           DataNamelist=self.oDataNamelist,
+                                           FileNamelist=self.sFileNamelist,
+                                           FileNameExec=self.sFileNameExec,
+                                           PathNameExec=self.sPathNameExec)
+        # Method to collect information
+        oDrv_Runner_Exec.runExecution(sRunMode, oRunArgs)
+        # -------------------------------------------------------------------------------------
+
+        # -------------------------------------------------------------------------------------
+        # Info end
+        oLogStream.info(' --> RunnerInstance [RunType: ' + sRunMode + '] ... OK')
+        # -------------------------------------------------------------------------------------
+
+        # -------------------------------------------------------------------------------------
+        # Debug (save runner workspace)
+        saveWorkspace(sFileRunner,
+                      oDataSettings=self.oDataSettings,
+                      oDataTags=self.oDataTags, oDataTime=self.oDataTime,
+                      oDataNamelist=self.oDataNamelist, sFileNamelist=self.sFileNamelist,
+                      oDataVarStatic=self.oDataVarStatic, oDataVarDynamic=self.oDataVarDynamic,
+                      sFileNameExec=self.sFileNameExec, sPathNameExec=self.sPathNameExec)
+        # -------------------------------------------------------------------------------------
+
+    # -------------------------------------------------------------------------------------
+
+    # -------------------------------------------------------------------------------------
+    # Method to finalizer instance
+    def Finalizer(self, sRunMode, oRunArgs):
+
+        # -------------------------------------------------------------------------------------
+        # Debug (restore runner workspace)
+        self.__dict__.update(restoreWorkspace(sFileRunner))
+        # -------------------------------------------------------------------------------------
+
+        # -------------------------------------------------------------------------------------
+        # Info start
+        oLogStream.info(' --> FinalizerInstance [RunType: ' + sRunMode + '] ... ')
+        # -------------------------------------------------------------------------------------
+
+        # -------------------------------------------------------------------------------------
+        # Initialize finalizer to collect Data
+        oDrv_Finalizer_Data = HMC_Finalizer_Data(DataSettings=self.oDataSettings,
+                                                 DataTags=self.oDataTags,
+                                                 DataVarStatic=self.oDataVarStatic,
+                                                 DataVarDynamic=self.oDataVarDynamic,
+                                                 DataTime=self.oDataTime)
+        # Method to collect Data
+        oDrv_Finalizer_Data.collectData(sRunMode, oRunArgs)
+        # -------------------------------------------------------------------------------------
+
+        # -------------------------------------------------------------------------------------
+        # Initialize finalizer to collect Data
+        oDrv_Finalizer_TimeSeries = HMC_Finalizer_TimeSeries(DataSettings=self.oDataSettings,
+                                                             DataTags=self.oDataTags,
+                                                             DataVarStatic=self.oDataVarStatic,
+                                                             DataVarDynamic=self.oDataVarDynamic,
+                                                             DataTime=self.oDataTime)
+        # Method to collect Data
+        oDrv_Finalizer_TimeSeries.writeData(sRunMode, oRunArgs)
+        # -------------------------------------------------------------------------------------
+
+        # -------------------------------------------------------------------------------------
+        # Info start
+        oLogStream.info(' --> Finalizer Instance [RunType: ' + sRunMode + '] ... OK')
+        # -------------------------------------------------------------------------------------
+
+    # -------------------------------------------------------------------------------------
+
+# -------------------------------------------------------------------------------------
