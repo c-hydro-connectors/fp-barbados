@@ -1,0 +1,29 @@
+{
+  "info_run": {
+    "time": null,
+    "name": "rf_wrf_realtime",
+    "procedure": "ensemble_rfarm",
+    "ensemble": 30
+  },
+  "info_static" : {
+    "file_section" : "barbados.info_section.txt",
+    "folder_section": "/share/c-hydro/data/static/hmc/point/"
+  },
+  "info_dynamic": {
+    "template" : {
+      "datetime_input": "%Y%m%d%H00",
+      "datetime_outcome": "%Y%m%d%H00",
+      "sub_path_time": "%Y/%m/%d/",
+      "ensemble": "{:03d}",
+      "section": "string"
+    },
+    "input": {
+      "file_discharge": "hydrograph_{section}_{datetime_input}.txt",
+      "folder_discharge": "/share/c-hydro/dewetra/rf_wrf_realtime/ensemble_rfarm_id_{ensemble}/{sub_path_time}"
+    },
+    "outcome": {
+      "file_discharge": "hydrograph_{section}_{datetime_outcome}.txt",
+      "folder_discharge": "/share/c-hydro/dewetra/rf_wrf_realtime/ensemble_rfarm/{sub_path_time}"
+    }
+  }
+}
